@@ -1,6 +1,7 @@
 //#define SerialDebug  // set to true to print serial output for debugging
 //#define SendBLE    // set to true to send DATA over BLE
-#define SaveFlash  // set true to log data
+//#define SaveFlash  // set true to log data
+#define UseOLED   // set true to display data on OLED
 
 #include "functions.h"
 #include "I2Cdev.h"
@@ -143,7 +144,7 @@ void setup(void)
   Serial.println(accelgyro.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
 #endif
 
-  //analogReference(INTERNAL);
+  analogReference(INTERNAL);
   analogRead(4);
 
 #ifdef SaveFlash
@@ -193,11 +194,9 @@ void loop(void)
       latitude.number = gps.location.lat();
       longitude.number = gps.location.lng();
       alt.number = gps.altitude.meters();
-      TinyGPSDate d = gps.date;
-      TinyGPSTime t = gps.time;
 
-      gps_date.timedate = d.value();
-      gps_time.timedate = t.value();
+      gps_date.timedate = gps.date.value();
+      gps_time.timedate = gps.time.value();
 
 
 
@@ -214,23 +213,21 @@ void loop(void)
 
 #ifdef UseOLED
       SeeedOled.setTextXY(4,0);
-      SeeedOled.putString("LT="); 
+      //SeeedOled.putString("LT="); 
       SeeedOled.putFloat(latitude.number);
 
       SeeedOled.setTextXY(5,0);
-      SeeedOled.putString("LN="); 
+      //SeeedOled.putString("LN="); 
       SeeedOled.putFloat(longitude.number);
 
       SeeedOled.setTextXY(6,0);
-      SeeedOled.putString("A="); 
+      //SeeedOled.putString("A="); 
       SeeedOled.putFloat(alt.number);
 
       SeeedOled.setTextXY(7,0);
-      char sz[32];
-      sprintf(sz, "%02d%02d%02d ", t.hour(), t.minute(), t.second());
-      SeeedOled.putString(sz);
-      sprintf(sz, "%02d%02d%02d", d.month(), d.day(), d.year());
-      SeeedOled.putString(sz);
+      SeeedOled.putNumber(gps_date.timedate);
+      SeeedOled.setTextXY(7,7);
+      SeeedOled.putNumber(gps_time.timedate);
 #endif
 
 #ifdef SaveFlash
@@ -282,7 +279,7 @@ void loop(void)
 #ifdef UseOLED
     SeeedOled.setTextXY(0,5);
     SeeedOled.putFloat(1.0f/deltat);
-    SeeedOled.putString("Hz");
+    //SeeedOled.putString("Hz");
 #endif
 
 
@@ -301,7 +298,7 @@ void loop(void)
       // in the LSM9DS0 sensor. This rotation can be modified to allow any convenient orientation convention.
       // This is ok by aircraft orientation standards!  
       // Pass gyro rate as rad/s
-      // MadgwickQuaternionUpdate(Axyz[0], Axyz[1], Axyz[2], Gxyz[0]*PI/180.0f, Gxyz[1]*PI/180.0f, Gxyz[2]*PI/180.0f,  Mxyz[0],  Mxyz[1], Mxyz[2]);
+      MadgwickQuaternionUpdate(Axyz[0], Axyz[1], Axyz[2], Gxyz[0]*PI/180.0f, Gxyz[1]*PI/180.0f, Gxyz[2]*PI/180.0f,  Mxyz[0],  Mxyz[1], Mxyz[2]);
       // MahonyQuaternionUpdate(ax, ay, az, gx*PI/180.0f, gy*PI/180.0f, gz*PI/180.0f, my, mx, mz);
       smartDelay(0);
     }
@@ -344,18 +341,18 @@ void loop(void)
 
 #ifdef UseOLED
     SeeedOled.setTextXY(1,0);
-    SeeedOled.putString("Y=");
-    SeeedOled.setTextXY(1,2);
+    //SeeedOled.putString("Y=");
+    //SeeedOled.setTextXY(1,2);
     SeeedOled.putFloat(yaw.number);
 
     SeeedOled.setTextXY(2,0);
-    SeeedOled.putString("R=");
-    SeeedOled.setTextXY(2,2);
+    //SeeedOled.putString("R=");
+    //SeeedOled.setTextXY(2,2);
     SeeedOled.putFloat(roll.number);
 
     SeeedOled.setTextXY(3,0);
-    SeeedOled.putString("P=");
-    SeeedOled.setTextXY(3,2);
+    //SeeedOled.putString("P=");
+    //SeeedOled.setTextXY(3,2);
     SeeedOled.putFloat(pitch.number);
 #endif
 
@@ -421,23 +418,6 @@ void getCompassValue(void)
   Mxyz[0] = (double) mx * 1200 / 4096;
   Mxyz[1] = (double) my * 1200 / 4096;
   Mxyz[2] = (double) mz * 1200 / 4096;
-}
-void getHeading(void)
-{
-  heading=180*atan2(Mxyz[1],Mxyz[0])/PI;
-  if(heading <0) heading +=360;
-}
-
-void getTiltHeading(void)
-{
-  float pitch = asin(-Axyz[0]);
-  float roll = asin(Axyz[1]/cos(pitch));
-
-  float xh = Mxyz[0] * cos(pitch) + Mxyz[2] * sin(pitch);
-  float yh = Mxyz[0] * sin(roll) * sin(pitch) + Mxyz[1] * cos(roll) - Mxyz[2] * sin(roll) * cos(pitch);
-  float zh = -Mxyz[0] * cos(roll) * sin(pitch) + Mxyz[1] * sin(roll) + Mxyz[2] * cos(roll) * cos(pitch);
-  tiltheading = 180 * atan2(yh, xh)/PI;
-  if(yh<0)    tiltheading +=360;
 }
 
 // This custom version of delay() ensures that the gps object
