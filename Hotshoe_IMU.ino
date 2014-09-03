@@ -1,8 +1,19 @@
+//#define SerialDebug  // set to true to print serial output for debugging
+//#define SendBLE    // set to true to send DATA over BLE
+#define SaveFlash  // set true to log data
+
 #include "functions.h"
 #include "I2Cdev.h"
 #include "MPU6050.h"
 #include <Wire.h>
+#ifdef UseOLED
 #include <SeeedOLED.h>
+#endif
+
+#ifdef SaveFlash
+#include <SD.h>
+#endif
+
 #include <avr/pgmspace.h>
 #include <Sleep_n0m1.h>
 #include "sleep.h"
@@ -14,6 +25,20 @@
 // AD0 low = 0x68 (default for InvenSense evaluation board)
 // AD0 high = 0x69
 MPU6050 accelgyro;
+
+#ifdef SaveFlash
+// On the Ethernet Shield, CS is pin 4. Note that even if it's not
+// used as the CS pin, the hardware CS pin (10 on most Arduino boards,
+// 53 on the Mega) must be left as an output or the SD library
+// functions will not work.
+const int chipSelect = A5;
+File sdfile;
+
+static char filename[13] = "AHRSBIN.DAT";
+static bool fileOpened = false;
+static int byteCount = 0;
+
+#endif
 
 // GPS Module on Serial1 wrapped with TinyGPS++
 TinyGPSPlus gps;
@@ -43,14 +68,16 @@ typedef union
 {
   float number;
   uint8_t bytes[4];
-} FLOATUNION_t;
+} 
+FLOATUNION_t;
 
 //Time stamp
 typedef union
 {
   uint32_t timedate;
   uint8_t bytes[4];
-} LONGUNION_t;
+} 
+LONGUNION_t;
 
 typedef struct
 {
@@ -58,10 +85,11 @@ typedef struct
   FLOATUNION_t x;
   FLOATUNION_t y;
   FLOATUNION_t z;
-} MEASURE_t;
+} 
+MEASURE_t;
 
 FLOATUNION_t pitch, yaw, roll;
-FLOATUNION_t latitude,longitude,altitude;
+FLOATUNION_t latitude,longitude,alt;
 LONGUNION_t gps_time,gps_date;
 
 
@@ -75,7 +103,6 @@ float tiltheading;
 
 boolean dumpState = true;
 unsigned char count=0;
-int addr=0; //first address
 
 //Scaled raw values
 float Axyz[3];
@@ -83,12 +110,10 @@ float Gxyz[3];
 float Mxyz[3];
 
 
-float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion
-float eInt[3] = {0.0f, 0.0f, 0.0f};       // vector to hold integral error for Mahony method
-
-#define SerialDebug false  // set to true to print serial output for debugging
-#define SendBLE false      // set to true to send DATA over BLE
-#define SaveFlash true  // set true to log data
+float q[4] = {
+  1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion
+float eInt[3] = {
+  0.0f, 0.0f, 0.0f};       // vector to hold integral error for Mahony method
 
 #define SerialBaud   9600
 #define Serial1Baud  9600
@@ -96,84 +121,88 @@ float eInt[3] = {0.0f, 0.0f, 0.0f};       // vector to hold integral error for M
 void setup(void)
 {
   Wire.begin();	
+
+#ifdef UseOLED
   SeeedOled.init();  //initialze SEEED OLED display
   SeeedOled.clearDisplay();  // clear the screen and set start position to top left corner
+#endif
 
   Serial.begin(SerialBaud);
   Serial1.begin(Serial1Baud);
 
   initIOs();
   // initialize device
+#ifdef SerialDebug
   Serial.println("Initializing I2C devices...");
+#endif
   accelgyro.initialize();
 
   // verify connection
+#ifdef SerialDebug
   Serial.println("Testing device connections...");
   Serial.println(accelgyro.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
+#endif
 
-  analogReference(INTERNAL);
+  //analogReference(INTERNAL);
   analogRead(4);
-  
-  pinMode(A5,OUTPUT);
-  
+
+#ifdef SaveFlash
+  // see if the card is present and can be initialized:
+  if (!SD.begin(chipSelect)) {
+    // don't do anything more:
+    return;
+  }
+  if(!SD.exists(filename)) {
+    sdfile = SD.open(filename, FILE_WRITE);
+  }
+  fileOpened = (boolean)sdfile;
+  delay(3000);
+#endif
+
   //while(!Serial.available());
-// set slave 
-  if(SendBLE)
+  // set slave 
+#ifdef SendBLE
   {
     Serial1.print("AT+ROLE0");
     delay(1000);
   }
-  
+#endif
+
   //while(!Serial.available());
 }
 void loop(void)
 {
-  for(;;){
-    if (Serial.available() > 0)
+  if (Serial.available() > 0)
+  {
+    int incoming = Serial.read();
+    if(incoming=='D')
     {
-      int incoming = Serial.read();
-      if(incoming=='D')
-      {
-         addr=0;
-         dumpState = false;
-      }
-      if(incoming=='P')
-      {
-         addr=0;
-         dumpState = true;
-      }
+      dumpState = false;
     }
-    if(dumpState)
+    if(incoming=='P')
     {
-      recordData();
+      dumpState = true;
     }
   }
-}
-
-//=========================================
-// Live Data recording
-//=========================================
-void recordData()
-{
-    while (Serial1.available() > 0)
-    {
-      gps.encode(Serial1.read());
-    }
+  if(dumpState)
+  {
+    smartDelay(0);
 
     if (gps.location.isUpdated())
     {
       latitude.number = gps.location.lat();
       longitude.number = gps.location.lng();
-      altitude.number = gps.altitude.meters();
+      alt.number = gps.altitude.meters();
       TinyGPSDate d = gps.date;
       TinyGPSTime t = gps.time;
-      
+
       gps_date.timedate = d.value();
       gps_time.timedate = t.value();
-      
-      
-      
-      if(SendBLE) {
+
+
+
+#ifdef SendBLE
+      {
         Serial1.print("LT:"); 
         Serial1.print(latitude.number, 6);
         Serial1.print("LN:"); 
@@ -181,25 +210,45 @@ void recordData()
         Serial1.print("A:");
         Serial1.println(altitude.number,3);
       }
-      
+#endif
+
+#ifdef UseOLED
       SeeedOled.setTextXY(4,0);
       SeeedOled.putString("LT="); 
       SeeedOled.putFloat(latitude.number);
-      
+
       SeeedOled.setTextXY(5,0);
       SeeedOled.putString("LN="); 
       SeeedOled.putFloat(longitude.number);
-      
+
       SeeedOled.setTextXY(6,0);
       SeeedOled.putString("A="); 
-      SeeedOled.putFloat(altitude.number);
-      
+      SeeedOled.putFloat(alt.number);
+
       SeeedOled.setTextXY(7,0);
       char sz[32];
       sprintf(sz, "%02d%02d%02d ", t.hour(), t.minute(), t.second());
       SeeedOled.putString(sz);
       sprintf(sz, "%02d%02d%02d", d.month(), d.day(), d.year());
       SeeedOled.putString(sz);
+#endif
+
+#ifdef SaveFlash
+     if (fileOpened) {
+        sdfile.write(latitude.bytes,4);
+        sdfile.write(longitude.bytes,4);
+        sdfile.write(alt.bytes,4);
+        sdfile.write(gps_date.bytes,4);
+        sdfile.write(gps_time.bytes,4);
+        byteCount += 12;
+        if (byteCount >= 1024) {
+            // flush to file every 1KB
+            sdfile.flush();
+            byteCount = 0;
+        }
+    }
+#endif
+
     }
 
     unsigned char ChS=readCharge();
@@ -225,19 +274,21 @@ void recordData()
     }
     //delay(100);
     count++;
-    
+
     Now = micros();
     deltat = ((Now - lastUpdate)/1000000.0f); // set integration time by time elapsed since last filter update
     lastUpdate = Now;
-  
+
+#ifdef UseOLED
     SeeedOled.setTextXY(0,5);
     SeeedOled.putFloat(1.0f/deltat);
     SeeedOled.putString("Hz");
-    
-    
+#endif
+
+
     int i;
     for(i=0;i<10;i++)
-    // read raw accel/gyro measurements from device
+      // read raw accel/gyro measurements from device
     {
       accelgyro.getMotion9(&ax, &ay, &az, &gx, &gy, &gz, &mx, &my, &mz);
       getAccelValue();
@@ -250,11 +301,11 @@ void recordData()
       // in the LSM9DS0 sensor. This rotation can be modified to allow any convenient orientation convention.
       // This is ok by aircraft orientation standards!  
       // Pass gyro rate as rad/s
-       MadgwickQuaternionUpdate(Axyz[0], Axyz[1], Axyz[2], Gxyz[0]*PI/180.0f, Gxyz[1]*PI/180.0f, Gxyz[2]*PI/180.0f,  Mxyz[0],  Mxyz[1], Mxyz[2]);
+      // MadgwickQuaternionUpdate(Axyz[0], Axyz[1], Axyz[2], Gxyz[0]*PI/180.0f, Gxyz[1]*PI/180.0f, Gxyz[2]*PI/180.0f,  Mxyz[0],  Mxyz[1], Mxyz[2]);
       // MahonyQuaternionUpdate(ax, ay, az, gx*PI/180.0f, gy*PI/180.0f, gz*PI/180.0f, my, mx, mz);
       smartDelay(0);
     }
-  
+
     // Define output variables from updated quaternion---these are Tait-Bryan angles, commonly used in aircraft orientation.
     // In this coordinate system, the positive z-axis is down toward Earth. 
     // Yaw is the angle between Sensor x-axis and Earth magnetic North (or true North if corrected for local declination, looking down on the sensor positive yaw is counterclockwise.
@@ -271,8 +322,9 @@ void recordData()
     yaw.number   *= 180.0f / PI; 
     yaw.number   -= 13.8; // Declination at Danville, California is 13 degrees 48 minutes and 47 seconds on 2014-04-04
     roll.number  *= 180.0f / PI;
-  
-    if(SendBLE) {
+
+#ifdef SendBLE
+    {
       Serial1.print("Y:");
       Serial1.print(yaw.number, 2);
       Serial1.print("P:");
@@ -280,26 +332,34 @@ void recordData()
       Serial1.print("R:");
       Serial1.println(roll.number, 2);
     }
-    
-    if(SerialDebug) {
-      Serial.print("average rate = "); Serial.print(1.0f/deltat, 2); Serial.println(" Hz");
+#endif
+
+#ifdef SerialDebug
+    {
+      Serial.print("average rate = "); 
+      Serial.print(1.0f/deltat, 2); 
+      Serial.println(" Hz");
     }
-    
+#endif
+
+#ifdef UseOLED
     SeeedOled.setTextXY(1,0);
     SeeedOled.putString("Y=");
     SeeedOled.setTextXY(1,2);
     SeeedOled.putFloat(yaw.number);
-    
+
     SeeedOled.setTextXY(2,0);
     SeeedOled.putString("R=");
     SeeedOled.setTextXY(2,2);
     SeeedOled.putFloat(roll.number);
-    
+
     SeeedOled.setTextXY(3,0);
     SeeedOled.putString("P=");
     SeeedOled.setTextXY(3,2);
     SeeedOled.putFloat(pitch.number);
-    
+#endif
+
+  }
 }
 
 //=========================================
@@ -323,8 +383,11 @@ unsigned char readBat(void)
 {
   unsigned int rAD4 = analogRead(4);
   //Serial.println(rAD4);
+#ifdef UseOLED
   SeeedOled.setTextXY(0,0);
   SeeedOled.putNumber(rAD4);
+#endif
+
 }
 
 //=========================================
@@ -386,5 +449,7 @@ static void smartDelay(unsigned long ms)
   {
     while (Serial1.available())
       gps.encode(Serial1.read());
-  } while (millis() - start < ms);
+  } 
+  while (millis() - start < ms);
 }
+
