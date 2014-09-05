@@ -1,7 +1,7 @@
-//#define SerialDebug  // set to true to print serial output for debugging
+#define SerialDebug  // set to true to print serial output for debugging
 //#define SendBLE    // set to true to send DATA over BLE
 //#define SaveFlash  // set true to log data
-#define UseOLED   // set true to display data on OLED
+//#define UseOLED   // set true to display data on OLED
 
 #include "functions.h"
 #include "I2Cdev.h"
@@ -116,7 +116,7 @@ float q[4] = {
 float eInt[3] = {
   0.0f, 0.0f, 0.0f};       // vector to hold integral error for Mahony method
 
-#define SerialBaud   9600
+#define SerialBaud   38400
 #define Serial1Baud  9600
 
 void setup(void)
@@ -189,7 +189,7 @@ void loop(void)
   {
     smartDelay(0);
 
-    if (gps.location.isUpdated())
+    if (gps.location.isUpdated()||gps.date.isUpdated())
     {
       latitude.number = gps.location.lat();
       longitude.number = gps.location.lng();
@@ -200,14 +200,16 @@ void loop(void)
 
 
 
-#ifdef SendBLE
+#ifdef SerialDebug
       {
-        Serial1.print("LT:"); 
-        Serial1.print(latitude.number, 6);
-        Serial1.print("LN:"); 
-        Serial1.print(longitude.number, 6);
-        Serial1.print("A:");
-        Serial1.println(altitude.number,3);
+        Serial.print("LT:"); 
+        Serial.print(latitude.number, 6);
+        Serial.print("LN:"); 
+        Serial.print(longitude.number, 6);
+        Serial.print("A:");
+        Serial.println(alt.number,3);
+        Serial.print(gps_date.timedate);
+        Serial.println(gps_time.timedate);
       }
 #endif
 
@@ -284,7 +286,7 @@ void loop(void)
 
 
     int i;
-    for(i=0;i<10;i++)
+    for(i=0;i<20;i++)
       // read raw accel/gyro measurements from device
     {
       accelgyro.getMotion9(&ax, &ay, &az, &gx, &gy, &gz, &mx, &my, &mz);
@@ -299,7 +301,7 @@ void loop(void)
       // This is ok by aircraft orientation standards!  
       // Pass gyro rate as rad/s
       MadgwickQuaternionUpdate(Axyz[0], Axyz[1], Axyz[2], Gxyz[0]*PI/180.0f, Gxyz[1]*PI/180.0f, Gxyz[2]*PI/180.0f,  Mxyz[0],  Mxyz[1], Mxyz[2]);
-      // MahonyQuaternionUpdate(ax, ay, az, gx*PI/180.0f, gy*PI/180.0f, gz*PI/180.0f, my, mx, mz);
+      // MahonyQuaternionUpdate(Axyz[0], Axyz[1], Axyz[2], Gxyz[0]*PI/180.0f, Gxyz[1]*PI/180.0f, Gxyz[2]*PI/180.0f,  Mxyz[0],  Mxyz[1], Mxyz[2]);
       smartDelay(0);
     }
 
@@ -333,7 +335,13 @@ void loop(void)
 
 #ifdef SerialDebug
     {
-      Serial.print("average rate = "); 
+      Serial.print("Y:");
+      Serial.print(yaw.number, 2);
+      Serial.print("P:");
+      Serial.print(pitch.number, 2);
+      Serial.print("R:");
+      Serial.println(roll.number, 2);
+      Serial.print("Rate:"); 
       Serial.print(1.0f/deltat, 2); 
       Serial.println(" Hz");
     }
